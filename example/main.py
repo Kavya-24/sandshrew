@@ -7,9 +7,9 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from sandshrew.data_types import Provider
-from sandshrew.helpers import (
+from sandshrew import (
     Executor,
+    Provider,
     check_turn_completion,
     extract_assistant_message,
     prepare_tools,

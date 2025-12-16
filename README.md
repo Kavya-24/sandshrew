@@ -10,6 +10,22 @@ A lightweight Python library using a decorator-based approach to:
 
 ## Quick Start
 
+
+### Installation
+Install Python Package from `https://pypi.org/project/sandshrew/`
+
+Create virtual environment 
+```
+python3 -m venv venv 
+source venv/bin/activate
+```
+
+```
+pip install sandshrew
+```
+Only internal dependency needed is Pydantic as of 17/12/2025
+
+
 ### Defining Tools (`@sand_tool`)
 For the function that needs to be converted to a tool, attach @sand_tool to it.
 
