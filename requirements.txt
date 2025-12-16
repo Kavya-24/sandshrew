@@ -1,0 +1,8 @@
+# library dependencies
+pydantic
+
+# test and code dependencies
+pytest>=7.0
+openai
+ruff
+python-dotenv

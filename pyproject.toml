@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sandshrew"
+version = "0.1.0"
+description = "Production-ready tool integration library for LLMs"
+readme = "README.md"
+license = {text = "LICENSE"}
+authors = [
+    {name = "Kavya-24", email = "kavya@example.com"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0"
+]
+keywords = ["llm", "tools", "ai", "integration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/Kavya-24/sandshrew"
+Repository = "https://github.com/Kavya-24/sandshrew.git"
+Documentation = "https://github.com/Kavya-24/sandshrew#readme"
+Issues = "https://github.com/Kavya-24/sandshrew/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1.0",
+]
+
+[tool.setuptools]
+packages = ["sandshrew", "sandshrew.llm_utils"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
