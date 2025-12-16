@@ -12,7 +12,7 @@ A lightweight Python library using a decorator-based approach to:
 
 
 ### Installation
-Install Python Package from `https://pypi.org/project/sandshrew/`
+Install Python Package from https://pypi.org/project/sandshrew/
 
 Create virtual environment 
 ```
