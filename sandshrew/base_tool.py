@@ -76,7 +76,7 @@ class BaseTool:
             case Provider.OPENAI:
                 return OpenAIUtils.get_tool_description(name, description, params)
             case _:
-                raise f"Unsupported provider {provider}"
+                raise ValueError(f"Unsupported provider: {provider}")
 
     def _extract_parameters(self) -> Dict[str, Any]:
         """Extract parameters from function signature, skipping injected state."""
