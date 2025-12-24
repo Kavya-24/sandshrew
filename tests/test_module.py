@@ -3,7 +3,6 @@
 import pytest
 
 from sandshrew import (
-    AsyncExecutor,
     BaseTool,
     Executor,
     Provider,
@@ -170,55 +169,72 @@ class TestAsyncToolExecution:
 
     @pytest.mark.asyncio
     async def test_async_tool_execution(self):
-        """Test async tool can be executed with acall."""
-        result = await async_add.acall(2, 3)
+        """Test async tool can be executed with __acall__."""
+        result = await async_add.__acall__(2, 3)
         assert result == 5
 
     @pytest.mark.asyncio
     async def test_async_tool_with_state(self):
         """Test async tool with injected state."""
         state = {"user_email": "async@example.com"}
-        result = await async_get_user_email.acall(_injected_state=state)
+        result = await async_get_user_email.__acall__(_injected_state=state)
         assert result == "async@example.com"
 
     @pytest.mark.asyncio
     async def test_sync_tool_via_acall(self):
-        """Test that sync tools can be called via acall."""
-        result = await simple_add.acall(5, 10)
+        """Test that sync tools can be called via __acall__."""
+        result = await simple_add.__acall__(5, 10)
         assert result == 15
 
     @pytest.mark.asyncio
     async def test_async_tool_error_handling(self):
         """Test async error handling."""
         with pytest.raises(Exception):
-            await async_divide.acall(10, 0)
+            await async_divide.__acall__(10, 0)
 
 
 class TestAsyncExecutor:
-    """Test the AsyncExecutor class."""
+    """Test the Executor class with is_async=True."""
 
     def test_async_executor_initialization(self):
-        """Test AsyncExecutor creation."""
-        executor = AsyncExecutor(tool_list=[async_add], provider=Provider.OPENAI)
+        """Test Executor creation with is_async=True."""
+        executor = Executor(tool_list=[async_add], provider=Provider.OPENAI, is_async=True)
         assert "async_add" in executor.tools
+        assert executor.is_async is True
 
     def test_async_executor_with_state(self):
-        """Test AsyncExecutor with injected state."""
+        """Test Executor with injected state in async mode."""
         state = {"user_email": "test@example.com"}
-        executor = AsyncExecutor(
+        executor = Executor(
             tool_list=[async_get_user_email],
             provider=Provider.OPENAI,
             _injected_state=state,
+            is_async=True,
         )
         assert executor._injected_state == state
 
     def test_async_executor_parallel_config(self):
-        """Test AsyncExecutor parallel configuration."""
-        executor = AsyncExecutor(
+        """Test Executor parallel configuration in async mode."""
+        executor = Executor(
             tool_list=[async_add],
             provider=Provider.OPENAI,
             use_parallel=True,
             max_concurrency=10,
+            is_async=True,
         )
         assert executor.use_parallel is True
         assert executor.max_concurrency == 10
+        assert executor.is_async is True
+
+    def test_sync_execute_error_async_mode(self):
+        """Test that .execute() raises error when is_async=True."""
+        executor = Executor(is_async=True)
+        with pytest.raises(RuntimeError):
+            executor.execute("some_response")
+
+    @pytest.mark.asyncio
+    async def test_async_execute_error_sync_mode(self):
+        """Test that .aexecute() raises error when is_async=False."""
+        executor = Executor(is_async=False)
+        with pytest.raises(RuntimeError):
+            await executor.aexecute("some_response")

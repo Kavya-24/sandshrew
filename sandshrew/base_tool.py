@@ -71,7 +71,7 @@ class BaseTool:
         """Check if the wrapped function is async."""
         return inspect.iscoroutinefunction(self.func)
 
-    async def acall(self, *args, **kwargs) -> Any:
+    async def __acall__(self, *args, **kwargs) -> Any:
         """Execute the tool asynchronously with error handling and retry logic."""
         if not self.is_async:
             # For sync functions, just call them directly

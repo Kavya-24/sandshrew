@@ -64,24 +64,45 @@ class Executor:
         max_concurrency: int = 5,
         provider: Provider = Provider.OPENAI,
         _injected_state: Optional[Any] = {},
+        is_async: bool = False,
     ):
         self.tools = {tool.name: tool for tool in (tool_list or [])}
         self.use_parallel = use_parallel
         self.max_concurrency = max_concurrency
         self.provider = provider
         self._injected_state = _injected_state
+        self.is_async = is_async
 
     def execute(self, provider_completion_response: Any) -> List[ExecutionResult]:
         """
-        Execute tool calls either sequentially or in parallel based on configuration.
-        Override this method to customize execution behavior.
+        Execute tool calls synchronous calling .execute_single_tool() which calls tool.__call__
         """
+        if self.is_async:
+            raise RuntimeError("Cannot use .execute() when is_async=True. Use .aexecute() instead.")
+
         tool_calls: List[ToolCall] = extract_tool_calls(self.provider, provider_completion_response)
 
         if self.use_parallel:
             return self._execute_parallel(tool_calls)
         else:
             return self._execute_sequential(tool_calls)
+
+    async def aexecute(self, provider_completion_response: Any) -> List[ExecutionResult]:
+        """
+        Desc:
+            Execute tool calls asynchronously calling .execute_single_tool() which calls tool.__acall__
+        """
+        if not self.is_async:
+            raise RuntimeError(
+                "Cannot use .aexecute() when is_async=False. Use .execute() instead."
+            )
+
+        tool_calls: List[ToolCall] = extract_tool_calls(self.provider, provider_completion_response)
+
+        if self.use_parallel:
+            return await self._execute_parallel_async(tool_calls)
+        else:
+            return await self._execute_sequential_async(tool_calls)
 
     def _execute_sequential(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
         """Execute tool calls sequentially."""
@@ -109,7 +130,30 @@ class Executor:
 
         return [results[tool_call.id] for tool_call in tool_calls]
 
-    def _execute_single_tool(self, tool_call: ToolCall) -> ExecutionResult:
+    async def _execute_sequential_async(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
+        """Execute tool calls sequentially and asynchronously."""
+        results: List[ExecutionResult] = []
+
+        for tool_call in tool_calls:
+            result = await self._execute_single_tool(tool_call)
+            results.append(result)
+
+        return results
+
+    async def _execute_parallel_async(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
+        """Execute tool calls in parallel using asyncio.gather with concurrency limit."""
+        import asyncio
+
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+
+        async def execute_with_semaphore(tool_call: ToolCall) -> ExecutionResult:
+            async with semaphore:
+                return await self._execute_single_tool(tool_call)
+
+        results = await asyncio.gather(*[execute_with_semaphore(tc) for tc in tool_calls])
+        return list(results)
+
+    def _execute_single_tool(self, tool_call: ToolCall) -> ExecutionResult | Any:
         """Execute a single tool call and return the result."""
         try:
             if tool_call.name not in self.tools:
@@ -126,99 +170,19 @@ class Executor:
             if not isinstance(tool_call_args, dict):
                 raise TypeError(f"tool_call.arguments must be a dict, got {type(tool_call_args)}")
 
-            if tool.config.inject_state:
-                content = tool(self._injected_state, **tool_call_args)
+            if self.is_async:
+                # Async execution
+                if tool.config.inject_state:
+                    return tool.__acall__(self._injected_state, **tool_call_args)
+                else:
+                    return tool.__acall__(**tool_call_args)
             else:
-                content = tool(**tool_call_args)
-
-            return ExecutionResult(tool_call=tool_call, content=content)
-
-        except Exception as e:
-            error = ExecutionError(
-                message=str(e),
-                raw_error=e,
-                retryable=False,
-                backtrace=traceback.format_exc(),
-            )
-            return ExecutionResult(tool_call=tool_call, error=error)
-
-
-class AsyncExecutor:
-    """Async executor for running tool calls with asyncio."""
-
-    def __init__(
-        self,
-        *,
-        tool_list: List[BaseTool] = None,
-        use_parallel: bool = False,
-        max_concurrency: int = 5,
-        provider: Provider = Provider.OPENAI,
-        _injected_state: Optional[Any] = {},
-    ):
-        self.tools = {tool.name: tool for tool in (tool_list or [])}
-        self.use_parallel = use_parallel
-        self.max_concurrency = max_concurrency
-        self.provider = provider
-        self._injected_state = _injected_state
-
-    async def execute(self, provider_completion_response: Any) -> List[ExecutionResult]:
-        """
-        Execute tool calls asynchronously, either sequentially or in parallel.
-        """
-        tool_calls: List[ToolCall] = extract_tool_calls(self.provider, provider_completion_response)
-
-        if self.use_parallel:
-            return await self._execute_parallel(tool_calls)
-        else:
-            return await self._execute_sequential(tool_calls)
-
-    async def _execute_sequential(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
-        """Execute tool calls sequentially."""
-        results: List[ExecutionResult] = []
-
-        for tool_call in tool_calls:
-            result = await self._execute_single_tool(tool_call)
-            results.append(result)
-
-        return results
-
-    async def _execute_parallel(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
-        """Execute tool calls in parallel using asyncio.gather with concurrency limit."""
-        import asyncio
-
-        semaphore = asyncio.Semaphore(self.max_concurrency)
-
-        async def execute_with_semaphore(tool_call: ToolCall) -> ExecutionResult:
-            async with semaphore:
-                return await self._execute_single_tool(tool_call)
-
-        results = await asyncio.gather(*[execute_with_semaphore(tc) for tc in tool_calls])
-        return list(results)
-
-    async def _execute_single_tool(self, tool_call: ToolCall) -> ExecutionResult:
-        """Execute a single tool call asynchronously and return the result."""
-        try:
-            if tool_call.name not in self.tools:
-                error = ExecutionError(
-                    message=f"Tool '{tool_call.name}' not found", retryable=False
-                )
-                return ExecutionResult(tool_call=tool_call, error=error)
-
-            tool = self.tools[tool_call.name]
-
-            # Tool call arguments must be a mapping
-            tool_call_args = tool_call.arguments or {}
-
-            if not isinstance(tool_call_args, dict):
-                raise TypeError(f"tool_call.arguments must be a dict, got {type(tool_call_args)}")
-
-            # Use acall for both sync and async tools
-            if tool.config.inject_state:
-                content = await tool.acall(self._injected_state, **tool_call_args)
-            else:
-                content = await tool.acall(**tool_call_args)
-
-            return ExecutionResult(tool_call=tool_call, content=content)
+                # Sync execution
+                if tool.config.inject_state:
+                    content = tool(self._injected_state, **tool_call_args)
+                else:
+                    content = tool(**tool_call_args)
+                return ExecutionResult(tool_call=tool_call, content=content)
 
         except Exception as e:
             error = ExecutionError(
