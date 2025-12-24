@@ -3,6 +3,7 @@
 import pytest
 
 from sandshrew import (
+    AsyncExecutor,
     BaseTool,
     Executor,
     Provider,
@@ -28,6 +29,27 @@ def divide(a: float, b: float) -> float:
 @sand_tool(inject_state=True, tags=["test"])
 def get_user_email(_injected_state: dict) -> str:
     """Get user email from state."""
+    return _injected_state.get("user_email", "unknown")
+
+
+# Async tool definitions for testing
+@sand_tool(tags=["async", "test"])
+async def async_add(a: int, b: int) -> int:
+    """Add two numbers asynchronously."""
+    return a + b
+
+
+@sand_tool(retry_count=2, tags=["async", "test"])
+async def async_divide(a: float, b: float) -> float:
+    """Divide two numbers asynchronously."""
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
+    return a / b
+
+
+@sand_tool(inject_state=True, tags=["async", "test"])
+async def async_get_user_email(_injected_state: dict) -> str:
+    """Get user email from state asynchronously."""
     return _injected_state.get("user_email", "unknown")
 
 
@@ -122,3 +144,81 @@ class TestToolPreparation:
         """Test preparing empty tool list."""
         tools = prepare_tools(Provider.OPENAI, [])
         assert tools == []
+
+
+# ============================================================================
+# Async Tests
+# ============================================================================
+
+
+class TestAsyncToolDetection:
+    """Test async tool detection."""
+
+    def test_sync_tool_is_not_async(self):
+        """Test that sync tools are detected correctly."""
+        assert simple_add.is_async is False
+        assert divide.is_async is False
+
+    def test_async_tool_is_async(self):
+        """Test that async tools are detected correctly."""
+        assert async_add.is_async is True
+        assert async_divide.is_async is True
+
+
+class TestAsyncToolExecution:
+    """Test async tool execution."""
+
+    @pytest.mark.asyncio
+    async def test_async_tool_execution(self):
+        """Test async tool can be executed with acall."""
+        result = await async_add.acall(2, 3)
+        assert result == 5
+
+    @pytest.mark.asyncio
+    async def test_async_tool_with_state(self):
+        """Test async tool with injected state."""
+        state = {"user_email": "async@example.com"}
+        result = await async_get_user_email.acall(_injected_state=state)
+        assert result == "async@example.com"
+
+    @pytest.mark.asyncio
+    async def test_sync_tool_via_acall(self):
+        """Test that sync tools can be called via acall."""
+        result = await simple_add.acall(5, 10)
+        assert result == 15
+
+    @pytest.mark.asyncio
+    async def test_async_tool_error_handling(self):
+        """Test async error handling."""
+        with pytest.raises(Exception):
+            await async_divide.acall(10, 0)
+
+
+class TestAsyncExecutor:
+    """Test the AsyncExecutor class."""
+
+    def test_async_executor_initialization(self):
+        """Test AsyncExecutor creation."""
+        executor = AsyncExecutor(tool_list=[async_add], provider=Provider.OPENAI)
+        assert "async_add" in executor.tools
+
+    def test_async_executor_with_state(self):
+        """Test AsyncExecutor with injected state."""
+        state = {"user_email": "test@example.com"}
+        executor = AsyncExecutor(
+            tool_list=[async_get_user_email],
+            provider=Provider.OPENAI,
+            _injected_state=state,
+        )
+        assert executor._injected_state == state
+
+    def test_async_executor_parallel_config(self):
+        """Test AsyncExecutor parallel configuration."""
+        executor = AsyncExecutor(
+            tool_list=[async_add],
+            provider=Provider.OPENAI,
+            use_parallel=True,
+            max_concurrency=10,
+        )
+        assert executor.use_parallel is True
+        assert executor.max_concurrency == 10
