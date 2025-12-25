@@ -194,47 +194,30 @@ class TestAsyncToolExecution:
 
 
 class TestAsyncExecutor:
-    """Test the Executor class with is_async=True."""
+    """Test the Executor class with async execute()."""
 
-    def test_async_executor_initialization(self):
-        """Test Executor creation with is_async=True."""
-        executor = Executor(tool_list=[async_add], provider=Provider.OPENAI, is_async=True)
+    def test_executor_initialization(self):
+        """Test Executor creation."""
+        executor = Executor(tool_list=[async_add], provider=Provider.OPENAI)
         assert "async_add" in executor.tools
-        assert executor.is_async is True
 
-    def test_async_executor_with_state(self):
-        """Test Executor with injected state in async mode."""
+    def test_executor_with_state(self):
+        """Test Executor with injected state."""
         state = {"user_email": "test@example.com"}
         executor = Executor(
             tool_list=[async_get_user_email],
             provider=Provider.OPENAI,
             _injected_state=state,
-            is_async=True,
         )
         assert executor._injected_state == state
 
-    def test_async_executor_parallel_config(self):
-        """Test Executor parallel configuration in async mode."""
+    def test_executor_parallel_config(self):
+        """Test Executor parallel configuration."""
         executor = Executor(
             tool_list=[async_add],
             provider=Provider.OPENAI,
             use_parallel=True,
             max_concurrency=10,
-            is_async=True,
         )
         assert executor.use_parallel is True
         assert executor.max_concurrency == 10
-        assert executor.is_async is True
-
-    def test_sync_execute_error_async_mode(self):
-        """Test that .execute() raises error when is_async=True."""
-        executor = Executor(is_async=True)
-        with pytest.raises(RuntimeError):
-            executor.execute("some_response")
-
-    @pytest.mark.asyncio
-    async def test_async_execute_error_sync_mode(self):
-        """Test that .aexecute() raises error when is_async=False."""
-        executor = Executor(is_async=False)
-        with pytest.raises(RuntimeError):
-            await executor.aexecute("some_response")
