@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
 from .base_tool import BaseTool
@@ -71,45 +70,41 @@ class Executor:
         self.provider = provider
         self._injected_state = _injected_state
 
-    def execute(self, provider_completion_response: Any) -> List[ExecutionResult]:
+    async def execute(self, provider_completion_response: Any) -> List[ExecutionResult]:
         """
-        Execute tool calls either sequentially or in parallel based on configuration.
-        Override this method to customize execution behavior.
+        Execute tool calls. Automatically handles sync and async tools based on tool.is_async.
         """
         tool_calls: List[ToolCall] = extract_tool_calls(self.provider, provider_completion_response)
 
         if self.use_parallel:
-            return self._execute_parallel(tool_calls)
+            return await self._execute_parallel(tool_calls)
         else:
-            return self._execute_sequential(tool_calls)
+            return await self._execute_sequential(tool_calls)
 
-    def _execute_sequential(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
+    async def _execute_sequential(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
         """Execute tool calls sequentially."""
         results: List[ExecutionResult] = []
 
         for tool_call in tool_calls:
-            result = self._execute_single_tool(tool_call)
+            result = await self._execute_single_tool(tool_call)
             results.append(result)
 
         return results
 
-    def _execute_parallel(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
-        """Execute tool calls in parallel with max_concurrency limit."""
-        results: Dict[str, ExecutionResult] = {}
+    async def _execute_parallel(self, tool_calls: List[ToolCall]) -> List[ExecutionResult]:
+        """Execute tool calls in parallel using asyncio.gather with concurrency limit."""
+        import asyncio
 
-        with ThreadPoolExecutor(max_workers=self.max_concurrency) as executor:
-            future_to_tool_call = {
-                executor.submit(self._execute_single_tool, tool_call): tool_call
-                for tool_call in tool_calls
-            }
+        semaphore = asyncio.Semaphore(self.max_concurrency)
 
-            for future in as_completed(future_to_tool_call):
-                result = future.result()
-                results[result.tool_call.id] = result
+        async def execute_with_semaphore(tool_call: ToolCall) -> ExecutionResult:
+            async with semaphore:
+                return await self._execute_single_tool(tool_call)
 
-        return [results[tool_call.id] for tool_call in tool_calls]
+        results = await asyncio.gather(*[execute_with_semaphore(tc) for tc in tool_calls])
+        return list(results)
 
-    def _execute_single_tool(self, tool_call: ToolCall) -> ExecutionResult:
+    async def _execute_single_tool(self, tool_call: ToolCall) -> ExecutionResult:
         """Execute a single tool call and return the result."""
         try:
             if tool_call.name not in self.tools:
@@ -126,10 +121,17 @@ class Executor:
             if not isinstance(tool_call_args, dict):
                 raise TypeError(f"tool_call.arguments must be a dict, got {type(tool_call_args)}")
 
-            if tool.config.inject_state:
-                content = tool(self._injected_state, **tool_call_args)
+            # Check if tool is async and call appropriately
+            if tool.is_async:
+                if tool.config.inject_state:
+                    content = await tool.__acall__(self._injected_state, **tool_call_args)
+                else:
+                    content = await tool.__acall__(**tool_call_args)
             else:
-                content = tool(**tool_call_args)
+                if tool.config.inject_state:
+                    content = tool(self._injected_state, **tool_call_args)
+                else:
+                    content = tool(**tool_call_args)
 
             return ExecutionResult(tool_call=tool_call, content=content)
 
