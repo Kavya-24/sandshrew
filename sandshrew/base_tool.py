@@ -66,6 +66,28 @@ class BaseTool:
                         f"Tool '{self.name}' failed after {self.config.retry_count + 1} attempts: {str(e)}"
                     ) from e
 
+    @property
+    def is_async(self) -> bool:
+        """Check if the wrapped function is async."""
+        return inspect.iscoroutinefunction(self.func)
+
+    async def __acall__(self, *args, **kwargs) -> Any:
+        """Execute the tool asynchronously with error handling and retry logic."""
+        if not self.is_async:
+            # For sync functions, just call them directly
+            return self.__call__(*args, **kwargs)
+
+        attempt = 0
+        while attempt <= self.config.retry_count:
+            try:
+                return await self.func(*args, **kwargs)
+            except Exception as e:
+                attempt += 1
+                if attempt > self.config.retry_count:
+                    raise ToolExecutionError(
+                        f"Tool '{self.name}' failed after {self.config.retry_count + 1} attempts: {str(e)}"
+                    ) from e
+
     def get_tool_description(self, provider: Provider) -> Dict[str, Any]:
         """Generate OpenAI-compatible tool description from function signature and docstring."""
         params = self._extract_parameters()
